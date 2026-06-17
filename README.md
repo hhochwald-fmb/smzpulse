@@ -142,7 +142,7 @@ Geeignet wenn Docker bereits vorhanden ist — egal ob auf Mac, Windows oder Lin
 #### Installation per GitHub (empfohlen)
 
 ```bash
-git clone https://github.com/DEIN-USERNAME/smzpulse.git
+git clone https://github.com/hhochwald-fmb/smzpulse.git
 cd smzpulse
 docker compose up -d --build
 ```
