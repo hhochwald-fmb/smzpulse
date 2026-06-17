@@ -1,0 +1,10 @@
+{
+    "devices": {
+        "68E6191A-9D60-4E84-96CF-7E5065C82E89": "AppleTV XCode",
+        "E1524EE7-B20C-454C-9B21-46EB0C1EE6E5": "Xcode TV",
+        "12345678910": "TestTEst"
+    },
+    "primary_color": "#4a657a",
+    "secondary_color": "#f39200",
+    "logo": "logo_custom_1778071728.png"
+}

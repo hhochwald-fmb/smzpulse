@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Generierte Datei (wird beim Speichern der Einstellungen neu geschrieben)
+theme.js
+
+# Backup-Dateien
+*.bak.json
+*.tmp.*
+
+# Vom Admin hochgeladene Bilder (benutzerspezifisch)
+images/img_*
+images/logo_custom_*
+
+# Claude Code
+.claude/
+admin/.claude/

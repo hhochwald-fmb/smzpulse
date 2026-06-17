@@ -1,0 +1,15 @@
+# Block files that should never be HTTP-accessible.
+# Note: auth.php is a PHP file that returns data via `return`, so the server
+# parses it and emits nothing on direct access — but we add belt-and-braces here.
+<FilesMatch "^(auth\.php|.*\.bak|.*\.bak\.json|.*\.tmp\.[A-Za-z0-9]+)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Prevent directory listing so removing index.php does not expose the tree
+Options -Indexes

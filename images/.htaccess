@@ -1,0 +1,31 @@
+# Prevent execution of any server-side scripts in the uploads directory.
+# Even if an attacker manages to upload e.g. shell.php disguised as an image,
+# the server will not execute it.
+
+Options -Indexes
+
+<FilesMatch "\.(php|phar|phtml|php3|php4|php5|php7|php8|pl|py|jsp|asp|aspx|sh|cgi|htaccess)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Disable PHP engine for this directory if mod_php is in use
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+    php_flag engine off
+</IfModule>
+
+# Remove any handler/type mapping that could trigger script execution
+RemoveHandler .php .phar .phtml .php3 .php4 .php5 .php7 .php8
+RemoveType .php .phar .phtml .php3 .php4 .php5 .php7 .php8
+AddType text/plain .php .phar .phtml .php3 .php4 .php5 .php7 .php8

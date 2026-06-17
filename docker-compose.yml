@@ -1,0 +1,9 @@
+services:
+  smzpulse:
+    build: .
+    ports:
+      - "8081:80"
+    volumes:
+      # Ganzes Projektverzeichnis einbinden — PHP kann damit normal schreiben/umbenennen
+      - .:/var/www/html
+    restart: unless-stopped

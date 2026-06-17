@@ -1,0 +1,8 @@
+.DS_Store
+*.bak.json
+.git
+.claude
+*/.claude
+Dockerfile
+docker-compose.yml
+.dockerignore
