@@ -16,6 +16,7 @@ Die Apple-TV-App ruft sich Inhalte und Konfiguration als statische Dateien direk
 - [Erstes Login](#erstes-login)
 - [Verzeichnisstruktur](#verzeichnisstruktur)
 - [Was die Apple-TV-App braucht](#was-die-apple-tv-app-braucht)
+- [Apple-TV-App konfigurieren](#apple-tv-app-konfigurieren)
 - [Sicherheits-Check nach Installation](#sicherheits-check-nach-installation)
 - [Konfiguration anpassen](#konfiguration-anpassen)
 - [Backup](#backup)
@@ -245,6 +246,37 @@ Was die App **nicht** sehen sollte (durch `.htaccess` blockiert):
 - `*.bak*` — alte Backup-Dateien
 - `*.tmp.*` — temporäre Schreibdateien während Updates
 - Directory-Listings (`/smzpulse/`, `/smzpulse/images/`)
+
+---
+
+## Apple-TV-App konfigurieren
+
+Die SMZ Pulse One App benötigt zwei Parameter: die Server-URL und einen Gerätenamen. Diese können entweder manuell in der App eingegeben oder per MDM automatisch verteilt werden.
+
+### Manuelle Konfiguration
+
+Beim ersten Start der App auf dem Apple TV die Server-URL direkt eingeben:
+
+```
+https://smzpulse.smz-stuttgart.de
+```
+
+Den Gerätenamen individuell pro Apple TV vergeben (erscheint im Admin-Backend unter „Apple TV Geräte").
+
+### Konfiguration per Jamf Pro (empfohlen bei mehreren Geräten)
+
+Jamf Pro kann die App-Konfiguration automatisch an alle verwalteten Apple TVs ausrollen. Dazu in Jamf Pro unter **Devices → Apps → SMZ Pulse One → App Configuration** folgenden Plist-Inhalt einfügen:
+
+```xml
+<dict>
+    <key>serverURL</key>
+    <string>https://smzpulse.smz-stuttgart.de</string>
+    <key>deviceName</key>
+    <string>$DEVICENAME</string>
+</dict>
+```
+
+`$DEVICENAME` ist eine Jamf-Variable und wird beim Ausrollen automatisch durch den jeweiligen Gerätenamen aus Jamf ersetzt — jedes Apple TV trägt damit seinen eigenen Namen, ohne manuelle Eingabe.
 
 ---
 
