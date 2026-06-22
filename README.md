@@ -255,7 +255,7 @@ Die SMZ Pulse One App benötigt zwei Parameter: die Server-URL und einen Geräte
 
 ### Manuelle Konfiguration
 
-Beim ersten Start der App auf dem Apple TV die Server-URL direkt eingeben:
+Beim ersten Start der App auf dem Apple TV die Server-URL direkt eingeben — **ersetze die URL durch die eigene Server-Adresse**, unter der das Backend erreichbar ist:
 
 ```
 https://smzpulse.smz-stuttgart.de
@@ -275,6 +275,8 @@ Jamf Pro kann die App-Konfiguration automatisch an alle verwalteten Apple TVs au
     <string>$DEVICENAME</string>
 </dict>
 ```
+
+> ⚠️ Den Wert `https://smzpulse.smz-stuttgart.de` im `<string>`-Tag durch die eigene Server-URL ersetzen, unter der das smzPulse-Backend läuft (z.B. `https://mein-server.de/smzpulse` oder `http://192.168.1.100`).
 
 `$DEVICENAME` ist eine Jamf-Variable und wird beim Ausrollen automatisch durch den jeweiligen Gerätenamen aus Jamf ersetzt — jedes Apple TV trägt damit seinen eigenen Namen, ohne manuelle Eingabe.
 
