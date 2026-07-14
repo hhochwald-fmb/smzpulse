@@ -309,10 +309,19 @@ if (!is_array($config)) $config = [];
             const container = document.getElementById('images-container');
             container.innerHTML = '';
             currentData.images.forEach((img) => {
+                const filename = img.filename ?? img;
+                const duration = img.duration ?? '';
                 container.innerHTML += `
-                    <div class="image-item" data-id="${img}">
-                        <img src="../images/${img}" alt="${img}" draggable="false">
-                        <button class="delete-btn" onclick="deleteImage('${img}')"><i class="fas fa-times"></i></button>
+                    <div class="image-item" data-id="${filename}">
+                        <img src="../images/${filename}" alt="${filename}" draggable="false">
+                        <button class="delete-btn" onclick="deleteImage('${filename}')"><i class="fas fa-times"></i></button>
+                        <div class="duration-row">
+                            <input type="number" min="1" max="3600" placeholder="Standard (8s)"
+                                   value="${duration}"
+                                   onchange="updateImageDuration('${filename}', this)"
+                                   title="Anzeigedauer in Sekunden (leer = Standard 8s)">
+                            <span>Sek.</span>
+                        </div>
                     </div>
                 `;
             });
@@ -325,6 +334,7 @@ if (!is_array($config)) $config = [];
                 forceFallback: true,
                 onEnd: function() {
                     const newOrder = Array.from(container.querySelectorAll('.image-item')).map(el => el.dataset.id);
+                    currentData.images = newOrder.map(fn => currentData.images.find(i => (i.filename ?? i) === fn) || {filename: fn});
                     saveImageOrder(newOrder);
                 }
             });
@@ -377,6 +387,29 @@ if (!is_array($config)) $config = [];
             const dt = e.dataTransfer;
             const files = dt.files;
             handleFileUpload(files[0]);
+        }
+
+        async function updateImageDuration(filename, inputEl) {
+            const raw = inputEl.value.trim();
+            const duration = raw === '' ? null : parseInt(raw, 10);
+
+            if (duration !== null && (isNaN(duration) || duration < 1 || duration > 3600)) {
+                alert('Ungültige Dauer. Bitte 1–3600 Sekunden eingeben oder leer lassen für Standard.');
+                inputEl.value = '';
+                return;
+            }
+
+            const res = await apiPost('update_image_duration', { filename, duration });
+            if (res.success) {
+                const item = currentData.images.find(i => (i.filename ?? i) === filename);
+                if (item && typeof item === 'object') {
+                    if (duration !== null) item.duration = duration;
+                    else delete item.duration;
+                }
+            } else {
+                alert('Fehler beim Speichern der Dauer: ' + (res.error || 'Unbekannt'));
+                inputEl.value = '';
+            }
         }
 
         async function deleteImage(filename) {

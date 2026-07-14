@@ -24,7 +24,7 @@ $newsPath       = '../news/news.json';
 $imagesDir      = '../images/';
 
 // ---- CSRF check for state-changing actions ----
-$stateChanging = ['save_news', 'save_devices', 'upload_image', 'delete_image', 'reorder_images', 'save_settings'];
+$stateChanging = ['save_news', 'save_devices', 'upload_image', 'delete_image', 'reorder_images', 'save_settings', 'update_image_duration'];
 if (in_array($action, $stateChanging, true)) {
     $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
     if (empty($_SESSION['csrf_token']) || !is_string($token) || !hash_equals($_SESSION['csrf_token'], $token)) {
@@ -90,6 +90,17 @@ function generate_image_filename($ext, $prefix = 'img') {
     return $prefix . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(6)) . '.' . $ext;
 }
 
+// Converts a mixed old/new images list to always-object format.
+// Old format: ["file.jpg", ...] → New format: [{"filename":"file.jpg"}, ...]
+function normalize_images_list($images) {
+    return array_values(array_map(function ($item) {
+        if (is_string($item)) {
+            return ['filename' => $item];
+        }
+        return $item;
+    }, $images));
+}
+
 // ---- Actions ----
 switch ($action) {
     case 'ping': {
@@ -104,7 +115,7 @@ switch ($action) {
     case 'get_data':
         echo json_encode([
             'config' => read_json($configPath),
-            'images' => read_json($imagesJsonPath),
+            'images' => normalize_images_list(read_json($imagesJsonPath)),
             'news'   => read_json($newsPath),
         ]);
         break;
@@ -173,8 +184,8 @@ switch ($action) {
         }
         @chmod($targetPath, 0644);
 
-        $images = read_json($imagesJsonPath);
-        $images[] = $filename;
+        $images = normalize_images_list(read_json($imagesJsonPath));
+        $images[] = ['filename' => $filename];
         if (!write_json_atomic($imagesJsonPath, $images)) {
             // Roll back the file write so JSON & disk stay in sync
             @unlink($targetPath);
@@ -197,8 +208,9 @@ switch ($action) {
             break;
         }
 
-        $images = read_json($imagesJsonPath);
-        if (!in_array($filename, $images, true)) {
+        $images = normalize_images_list(read_json($imagesJsonPath));
+        $filenames = array_column($images, 'filename');
+        if (!in_array($filename, $filenames, true)) {
             http_response_code(404);
             echo json_encode(['error' => 'Bild nicht in der Liste gefunden']);
             break;
@@ -216,7 +228,7 @@ switch ($action) {
         }
 
         $images = array_values(array_filter($images, function ($img) use ($filename) {
-            return $img !== $filename;
+            return ($img['filename'] ?? '') !== $filename;
         }));
         if (!write_json_atomic($imagesJsonPath, $images)) {
             http_response_code(500);
@@ -235,11 +247,18 @@ switch ($action) {
             break;
         }
         // Only allow filenames that already exist in images.json — prevents injection
-        $existing = read_json($imagesJsonPath);
+        $existing = normalize_images_list(read_json($imagesJsonPath));
+        // Build a lookup map: filename → full object (preserves duration)
+        $existingMap = [];
+        foreach ($existing as $item) {
+            $existingMap[$item['filename']] = $item;
+        }
         $newOrder = [];
+        $seen = [];
         foreach ($data['images'] as $f) {
-            if (is_string($f) && in_array($f, $existing, true) && !in_array($f, $newOrder, true)) {
-                $newOrder[] = $f;
+            if (is_string($f) && isset($existingMap[$f]) && !isset($seen[$f])) {
+                $newOrder[] = $existingMap[$f];
+                $seen[$f] = true;
             }
         }
         if (!write_json_atomic($imagesJsonPath, $newOrder)) {
@@ -319,6 +338,57 @@ switch ($action) {
         ], JSON_PRETTY_PRINT) . ";";
         file_put_contents('../theme.js', $themeJs);
 
+        echo json_encode(['success' => true]);
+        break;
+    }
+
+    case 'update_image_duration': {
+        $data = json_decode(file_get_contents('php://input'), true);
+        $raw  = $data['filename'] ?? '';
+        $filename = is_string($raw) ? basename($raw) : '';
+
+        if (!is_safe_image_filename($filename)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Ungültiger Dateiname']);
+            break;
+        }
+
+        $duration = $data['duration'] ?? null;
+        if ($duration !== null) {
+            $duration = filter_var($duration, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 3600]]);
+            if ($duration === false) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Ungültige Dauer (1–3600 Sekunden oder leer für Standard)']);
+                break;
+            }
+        }
+
+        $images = normalize_images_list(read_json($imagesJsonPath));
+        $found = false;
+        foreach ($images as &$img) {
+            if (($img['filename'] ?? '') === $filename) {
+                if ($duration !== null) {
+                    $img['duration'] = $duration;
+                } else {
+                    unset($img['duration']);
+                }
+                $found = true;
+                break;
+            }
+        }
+        unset($img);
+
+        if (!$found) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Bild nicht in der Liste gefunden']);
+            break;
+        }
+
+        if (!write_json_atomic($imagesJsonPath, array_values($images))) {
+            http_response_code(500);
+            echo json_encode(['error' => 'JSON konnte nicht aktualisiert werden']);
+            break;
+        }
         echo json_encode(['success' => true]);
         break;
     }

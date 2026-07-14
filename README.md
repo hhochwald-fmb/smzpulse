@@ -1,4 +1,5 @@
 # smzPulse — Apple-TV Digital-Signage-System
+**Version 1.1.0**
 
 Web-Backend zur Verwaltung von Bildern, News-Texten und Geräten für eine Apple-TV-App, die im SMZ Stuttgart als digitales Display-System läuft.
 
@@ -186,11 +187,12 @@ Das gesamte Projektverzeichnis wird als Volume in den Container eingebunden. All
 
 URL: `http://<dein-server>/smzpulse/admin/`
 
-Initial-Zugang nach dem Setup:
+Initial-Zugang (Standard aus dem Repository):
 - **Benutzer:** `admin`
-- **Passwort:** wurde beim Erst-Setup als einfacher Wert hinterlegt (steht in der internen Übergabe-Notiz)
+- **Passwort:** `smzpulse`
 
-> ⚠️ **Direkt nach dem ersten Login das Passwort ändern**: Einstellungen → Admin Passwort.
+> ⚠️ **Direkt nach dem ersten Login das Passwort ändern**: Einstellungen → Admin Passwort.  
+> Das Standard-Passwort ist öffentlich bekannt — bei produktivem Einsatz unbedingt sofort ersetzen.
 >
 > Das Backend hasht das neue Passwort automatisch mit bcrypt und speichert es in `auth.php`. Der Klartext landet nirgendwo.
 
