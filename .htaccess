@@ -13,3 +13,9 @@
 
 # Prevent directory listing so removing index.php does not expose the tree
 Options -Indexes
+
+# Interne Dateien nicht über den Browser ausliefern
+# (wichtig, wenn smzPulse per "git clone" auf dem Server liegt).
+RedirectMatch 404 /\.(git|docker|claude)
+# storage/ enthält Update-Backups (komplette Programmdateien)
+RedirectMatch 404 ^(.*/)?storage/

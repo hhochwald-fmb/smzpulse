@@ -15,3 +15,7 @@ images/logo_custom_*
 # Claude Code
 .claude/
 admin/.claude/
+
+# Update-Backups und temporäre Downloads
+storage/*
+!storage/.htaccess

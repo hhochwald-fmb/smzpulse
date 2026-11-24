@@ -1,5 +1,5 @@
 # smzPulse — Apple-TV Digital-Signage-System
-**Version 1.1.0**
+**Version 1.2.0**
 
 Web-Backend zur Verwaltung von Bildern, News-Texten und Geräten für eine Apple-TV-App, die im SMZ Stuttgart als digitales Display-System läuft.
 
@@ -21,6 +21,7 @@ Die Apple-TV-App ruft sich Inhalte und Konfiguration als statische Dateien direk
 - [Sicherheits-Check nach Installation](#sicherheits-check-nach-installation)
 - [Konfiguration anpassen](#konfiguration-anpassen)
 - [Backup](#backup)
+- [Updates](#updates)
 - [Troubleshooting](#troubleshooting)
 - [Externe Komponenten / Lizenzen](#externe-komponenten--lizenzen)
 
@@ -211,6 +212,8 @@ smzpulse/
 ├── .htaccess              # Schützt auth.php / .bak / .tmp, blockt Directory-Listing
 ├── config.json            # Devices, Farben, Logo-Dateiname (öffentlich lesbar — App braucht das)
 ├── auth.php               # Passwort-Hash (geschützt, nur Server-seitig)
+├── VERSION                # Installierte Programmversion (wird vom Online-Update ersetzt)
+├── storage/               # Update-Backups + temporäre Downloads (per .htaccess gesperrt)
 ├── theme.js               # Wird beim Speichern in Einstellungen automatisch generiert
 ├── news/
 │   └── news.json          # Array der Ticker-Texte
@@ -225,6 +228,7 @@ smzpulse/
     ├── api.php            # JSON-API für AJAX-Aktionen
     ├── session_bootstrap.php
     ├── auth_helper.php
+    ├── updater.php        # Online-Update (GitHub-Release prüfen, herunterladen, einspielen)
     ├── style.css
     └── vendor/            # Lokale Kopien von Inter, Font Awesome, SortableJS
 ```
@@ -333,6 +337,39 @@ Regelmäßig sichern (z.B. wöchentlich):
 | `images/` (komplett) | Alle Bilddateien + Logo |
 
 Die Dateien unter `admin/` sind statisch — die kannst du jederzeit aus dem Original-Repo wiederherstellen.
+
+---
+
+## Updates
+
+### Update einspielen
+
+Im Admin-Bereich: **Updates → „Nach Updates suchen“**. smzPulse fragt das neueste **GitHub-Release** von `hhochwald-fmb/smzpulse` ab. Gibt es eine neuere Version, erscheinen die Release-Notizen und der Knopf **„Jetzt installieren“**.
+
+Was beim Update passiert:
+- Vorher wird ein Backup der ersetzten Programmdateien in `storage/backups/` angelegt
+- Ersetzt werden nur Programmdateien (`admin/`, `index.php`, `VERSION`, `README.md`, `.htaccess`, Docker-Dateien)
+- **Nie** überschrieben werden: `auth.php`, `config.json`, `theme.js`, `news/`, `images/` (Bilder und `images.json`)
+
+Ohne Internetzugang des Servers kann man das Release-ZIP von GitHub („Source code (zip)“) auch unter **Updates → Update-Paket hochladen** einspielen.
+
+Voraussetzung ist die PHP-Erweiterung `zip` (im Docker-Image enthalten) und Schreibrechte des Webservers auf den Programmordner.
+
+> **Installation per `git clone` / Docker:** Hier besser weiter mit `git pull` (+ `docker compose up -d --build`) aktualisieren, damit Git und die Dateien nicht auseinanderlaufen. Der Admin-Bereich zeigt in dem Fall einen Hinweis.
+
+> **Von Version 1.1.0 oder älter:** Diese Versionen haben noch keinen Update-Knopf. Einmalig die Dateien von Hand (FTP oder ZIP) einspielen, danach geht es per Knopfdruck.
+
+### Neue Version veröffentlichen
+
+1. Versionsnummer in der Datei `VERSION` erhöhen (z.B. `1.2.0` → `1.2.1`) und die Versionszeile oben in dieser README anpassen
+2. Committen und pushen
+3. Release anlegen — der Tag muss zur Datei `VERSION` passen:
+
+```bash
+gh release create v1.2.1 --title "smzPulse 1.2.1" --notes "- Was ist neu …"
+```
+
+Ein extra ZIP ist nicht nötig: smzPulse nimmt das automatische Quellcode-ZIP des Tags. (Hängt man ein Paket `smzpulse-x.y.z.zip` an das Release an, wird stattdessen dieses verwendet.)
 
 ---
 

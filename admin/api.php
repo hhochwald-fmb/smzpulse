@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/session_bootstrap.php';
 require_once __DIR__ . '/auth_helper.php';
+require_once __DIR__ . '/updater.php';
 smzpulse_init_session();
 
 header('Content-Type: application/json');
@@ -24,7 +25,8 @@ $newsPath       = '../news/news.json';
 $imagesDir      = '../images/';
 
 // ---- CSRF check for state-changing actions ----
-$stateChanging = ['save_news', 'save_devices', 'upload_image', 'delete_image', 'reorder_images', 'save_settings', 'update_image_duration'];
+$stateChanging = ['save_news', 'save_devices', 'upload_image', 'delete_image', 'reorder_images', 'save_settings', 'update_image_duration',
+                  'update_check', 'update_install', 'update_upload'];
 if (in_array($action, $stateChanging, true)) {
     $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
     if (empty($_SESSION['csrf_token']) || !is_string($token) || !hash_equals($_SESSION['csrf_token'], $token)) {
@@ -390,6 +392,63 @@ switch ($action) {
             break;
         }
         echo json_encode(['success' => true]);
+        break;
+    }
+
+    // ---- Online-Update ----
+    case 'update_info':
+        echo json_encode([
+            'version'      => SMZPULSE_VERSION,
+            'repo'         => SMZPULSE_UPDATE_REPO,
+            'git_checkout' => smzpulse_is_git_checkout(),
+            'zip_ok'       => class_exists('ZipArchive'),
+            'max_upload'   => ini_get('upload_max_filesize'),
+            'backups'      => array_slice(smzpulse_backups(), 0, 5),
+        ]);
+        break;
+
+    case 'update_check':
+        try {
+            $latest = smzpulse_check_latest();
+            echo json_encode([
+                'success'    => true,
+                'installed'  => SMZPULSE_VERSION,
+                'version'    => $latest['version'],
+                'name'       => $latest['name'],
+                'notes_html' => smzpulse_format_release_notes($latest['notes']),
+                'newer'      => $latest['newer'],
+            ]);
+        } catch (Throwable $e) {
+            http_response_code(502);
+            echo json_encode(['error' => 'Update-Prüfung fehlgeschlagen: ' . $e->getMessage()]);
+        }
+        break;
+
+    case 'update_install':
+    case 'update_upload': {
+        $zipPath = null;
+        $isDownload = ($action === 'update_install');
+        @set_time_limit(300);
+        try {
+            if ($isDownload) {
+                $zipPath = smzpulse_download_latest();
+            } else {
+                $f = $_FILES['package'] ?? null;
+                if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) {
+                    throw new RuntimeException('Bitte eine Update-Datei (ZIP) auswählen. Der Server erlaubt Uploads bis ' . ini_get('upload_max_filesize') . '.');
+                }
+                $zipPath = $f['tmp_name'];
+            }
+            $version = smzpulse_apply_update_zip($zipPath);
+            echo json_encode(['success' => true, 'version' => $version]);
+        } catch (Throwable $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Update fehlgeschlagen: ' . $e->getMessage()]);
+        } finally {
+            if ($isDownload && $zipPath) {
+                @unlink($zipPath);
+            }
+        }
         break;
     }
 

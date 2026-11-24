@@ -46,6 +46,7 @@ if (!is_array($config)) $config = [];
             <button class="tab-btn" onclick="showTab('news')">News Ticker</button>
             <button class="tab-btn" onclick="showTab('devices')">Apple TV Geräte</button>
             <button class="tab-btn" onclick="showTab('settings')">Einstellungen</button>
+            <button class="tab-btn" onclick="showTab('updates')">Updates</button>
         </div>
 
         <!-- Images Tab -->
@@ -161,6 +162,50 @@ if (!is_array($config)) $config = [];
 
                 <div class="action-bar">
                     <button class="btn-save" onclick="saveSettings()">Einstellungen speichern</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Updates Tab -->
+        <div id="updates-tab" class="tab-content">
+            <div class="card">
+                <h3>Updates</h3>
+                <p class="text-muted" style="margin-bottom: 20px;">Installierte Version: <strong id="update-installed">v…</strong></p>
+
+                <div id="update-git-hint" class="update-alert update-alert-info" style="display: none;">
+                    <div>Im smzPulse-Ordner liegt ein Git-Ordner (<code>.git</code>). Wurde smzPulse per <code>git clone</code> installiert (z.&nbsp;B. für Docker), aktualisierst du es besser mit <code>git pull</code>, damit Git und die Dateien nicht auseinanderlaufen.</div>
+                    <div style="margin-top: 6px;">Wurde smzPulse per FTP/SFTP hochgeladen, kannst du diesen Hinweis ignorieren und den Knopf unten nutzen. Den Ordner <code>.git</code> kannst du dann auch löschen.</div>
+                </div>
+                <div id="update-zip-missing" class="update-alert update-alert-error" style="display: none;">
+                    Die PHP-Erweiterung „zip“ fehlt auf dem Server – Online-Updates sind nicht möglich. Bitte die Dateien per FTP einspielen.
+                </div>
+
+                <p style="margin-bottom: 12px;">Online-Updates aus <code id="update-repo">–</code></p>
+                <button class="btn-primary btn-inline" id="update-check-btn" onclick="checkForUpdate()">
+                    <i class="fas fa-sync-alt"></i> Nach Updates suchen
+                </button>
+
+                <div id="update-result"></div>
+
+                <hr class="update-divider">
+
+                <h4>Update-Paket hochladen (ZIP)</h4>
+                <p class="text-muted" style="font-size: 13px; margin: 6px 0 12px;">
+                    Ein smzPulse-Release als ZIP (z.&nbsp;B. von GitHub „Source code (zip)“). Bilder, News, Geräte, Einstellungen und Passwort bleiben erhalten.
+                    Max. Upload-Größe des Servers: <span id="update-max-upload">–</span>
+                </p>
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <input type="file" id="update-package" accept=".zip">
+                    <button class="btn-primary btn-inline" id="update-upload-btn" onclick="uploadUpdate()">
+                        <i class="fas fa-upload"></i> Hochladen &amp; installieren
+                    </button>
+                </div>
+
+                <div id="update-backups" style="display: none;">
+                    <hr class="update-divider">
+                    <h4>Backups</h4>
+                    <ul id="update-backup-list" class="text-muted" style="font-size: 13px; padding-left: 20px; margin: 8px 0;"></ul>
+                    <p class="text-muted" style="font-size: 13px;">Liegen im Ordner <code>storage/backups/</code>.</p>
                 </div>
             </div>
         </div>
@@ -555,8 +600,114 @@ if (!is_array($config)) $config = [];
             }
         }
 
+        // --- Online-Update ---
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function formatBytes(bytes) {
+            if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+            return Math.round(bytes / 1024) + ' KB';
+        }
+
+        let updateZipOk = true;
+
+        async function loadUpdateInfo() {
+            const r = await fetch('api.php?action=update_info');
+            if (r.status === 401) { handleSessionExpired(); return; }
+            const info = await r.json();
+            updateZipOk = !!info.zip_ok;
+            document.getElementById('update-installed').textContent = 'v' + info.version;
+            document.getElementById('update-repo').textContent = info.repo;
+            document.getElementById('update-max-upload').textContent = info.max_upload;
+            document.getElementById('update-git-hint').style.display = info.git_checkout ? 'block' : 'none';
+            document.getElementById('update-zip-missing').style.display = info.zip_ok ? 'none' : 'block';
+            document.getElementById('update-upload-btn').disabled = !info.zip_ok;
+
+            const list = document.getElementById('update-backup-list');
+            list.innerHTML = (info.backups || []).map(b =>
+                `<li>${escapeHtml(b.name)} (${formatBytes(b.size)})</li>`).join('');
+            document.getElementById('update-backups').style.display = (info.backups || []).length ? 'block' : 'none';
+        }
+
+        async function checkForUpdate() {
+            const btn = document.getElementById('update-check-btn');
+            const result = document.getElementById('update-result');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Suche läuft …';
+            result.innerHTML = '';
+            const res = await apiPost('update_check', {});
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Nach Updates suchen';
+
+            if (!res.success) {
+                result.innerHTML = `<div class="update-alert update-alert-error">${escapeHtml(res.error || 'Unbekannter Fehler')}</div>`;
+                return;
+            }
+            if (!res.newer) {
+                result.innerHTML = `<div class="update-alert update-alert-success"><i class="fas fa-check-circle"></i> Du hast die neueste Version (v${escapeHtml(res.version)}).</div>`;
+                return;
+            }
+            const sub = (res.name && res.name !== 'smzPulse ' + res.version ? escapeHtml(res.name) + ' · ' : '')
+                + 'installiert ist v' + escapeHtml(res.installed);
+            result.innerHTML = `
+                <div class="update-card">
+                    <div class="update-card-head">
+                        <span class="update-badge">Neu</span>
+                        <div>
+                            <div class="update-card-title">Version ${escapeHtml(res.version)} ist verfügbar</div>
+                            <div class="update-card-sub">${sub}</div>
+                        </div>
+                    </div>
+                    ${res.notes_html ? `<div class="update-notes">${res.notes_html}</div>` : ''}
+                    ${updateZipOk ? `
+                    <div class="update-card-actions">
+                        <button class="btn-primary btn-inline" id="update-install-btn" data-version="${escapeHtml(res.version)}" onclick="installUpdate(this)">
+                            <i class="fas fa-download"></i> Jetzt installieren
+                        </button>
+                        <span>Vorher wird automatisch ein Backup angelegt.</span>
+                    </div>` : ''}
+                </div>`;
+        }
+
+        async function runUpdate(btn, action, body, isFormData) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Update läuft … bitte warten';
+            const res = await apiPost(action, body, isFormData);
+            if (res.success) {
+                alert('Update auf Version ' + res.version + ' installiert. Die Seite wird neu geladen.');
+                window.location.reload();
+            } else {
+                alert(res.error || 'Update fehlgeschlagen.');
+                loadUpdateInfo();
+                btn.disabled = false;
+                btn.innerHTML = action === 'update_install'
+                    ? '<i class="fas fa-download"></i> Jetzt installieren'
+                    : '<i class="fas fa-upload"></i> Hochladen &amp; installieren';
+            }
+        }
+
+        function installUpdate(btn) {
+            const version = btn.dataset.version;
+            if (!confirm('Update auf Version ' + version + ' jetzt installieren? Vorher wird automatisch ein Backup der Programmdateien angelegt.')) return;
+            runUpdate(btn, 'update_install', {}, false);
+        }
+
+        function uploadUpdate() {
+            const file = document.getElementById('update-package').files[0];
+            if (!file) {
+                alert('Bitte zuerst eine Update-Datei (ZIP) auswählen.');
+                return;
+            }
+            if (!confirm('Update-Paket jetzt installieren? Vorher wird automatisch ein Backup der Programmdateien angelegt.')) return;
+            const formData = new FormData();
+            formData.append('package', file);
+            runUpdate(document.getElementById('update-upload-btn'), 'update_upload', formData, true);
+        }
+
         // Start
         loadData();
+        loadUpdateInfo();
     </script>
 </body>
 </html>
