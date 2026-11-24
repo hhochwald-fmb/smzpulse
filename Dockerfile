@@ -1,7 +1,7 @@
 FROM php:8.2-apache
 
 # .htaccess-Dateien werden für die Sicherheit benötigt
-RUN a2enmod rewrite \
+RUN a2enmod rewrite headers \
     && sed -i 's/AllowOverride None/AllowOverride All/g' /etc/apache2/apache2.conf
 
 # zip-Erweiterung für das Online-Update im Admin-Bereich

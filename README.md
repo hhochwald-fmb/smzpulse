@@ -1,5 +1,5 @@
 # smzPulse — Apple-TV Digital-Signage-System
-**Version 1.2.0**
+**Version 1.2.1**
 
 Web-Backend zur Verwaltung von Bildern, News-Texten und Geräten für eine Apple-TV-App, die im SMZ Stuttgart als digitales Display-System läuft.
 
@@ -193,7 +193,8 @@ Initial-Zugang (Standard aus dem Repository):
 - **Passwort:** `smzpulse`
 
 > ⚠️ **Direkt nach dem ersten Login das Passwort ändern**: Einstellungen → Admin Passwort.  
-> Das Standard-Passwort ist öffentlich bekannt — bei produktivem Einsatz unbedingt sofort ersetzen.
+> Das Standard-Passwort ist öffentlich bekannt — bei produktivem Einsatz unbedingt sofort ersetzen.  
+> Nach 5 falschen Passwörtern wird die IP-Adresse für 15 Minuten gesperrt.
 >
 > Das Backend hasht das neue Passwort automatisch mit bcrypt und speichert es in `auth.php`. Der Klartext landet nirgendwo.
 
@@ -354,6 +355,8 @@ Was beim Update passiert:
 Ohne Internetzugang des Servers kann man das Release-ZIP von GitHub („Source code (zip)“) auch unter **Updates → Update-Paket hochladen** einspielen.
 
 Voraussetzung ist die PHP-Erweiterung `zip` (im Docker-Image enthalten) und Schreibrechte des Webservers auf den Programmordner.
+
+> **Sicherheit:** Solange das Standard-Passwort aktiv ist, sind Online-Updates und ZIP-Upload gesperrt (ein Update-ZIP kann beliebigen Programmcode enthalten). Erst unter Einstellungen ein eigenes Passwort setzen (mind. 8 Zeichen).
 
 > **Installation per `git clone` / Docker:** Hier besser weiter mit `git pull` (+ `docker compose up -d --build`) aktualisieren, damit Git und die Dateien nicht auseinanderlaufen. Der Admin-Bereich zeigt in dem Fall einen Hinweis.
 

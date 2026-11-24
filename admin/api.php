@@ -294,6 +294,12 @@ switch ($action) {
         unset($config['admin_password']);
 
         if (!empty($_POST['admin_password'])) {
+            $newPw = (string)$_POST['admin_password'];
+            if (strlen($newPw) < 8 || in_array(strtolower($newPw), ['smzpulse', 'admin', 'password', 'passwort'], true)) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Passwort zu schwach: mindestens 8 Zeichen und nicht das Standard-Passwort']);
+                break;
+            }
             $newHash = password_hash((string)$_POST['admin_password'], PASSWORD_DEFAULT);
             if (!smzpulse_auth_save_password($newHash)) {
                 http_response_code(500);
@@ -402,6 +408,7 @@ switch ($action) {
             'repo'         => SMZPULSE_UPDATE_REPO,
             'git_checkout' => smzpulse_is_git_checkout(),
             'zip_ok'       => class_exists('ZipArchive'),
+            'default_password' => smzpulse_auth_is_default_password(),
             'max_upload'   => ini_get('upload_max_filesize'),
             'backups'      => array_slice(smzpulse_backups(), 0, 5),
         ]);

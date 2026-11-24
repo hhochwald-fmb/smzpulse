@@ -19,3 +19,21 @@ Options -Indexes
 RedirectMatch 404 /\.(git|docker|claude)
 # storage/ enthält Update-Backups (komplette Programmdateien)
 RedirectMatch 404 ^(.*/)?storage/
+
+# Doku, Versionsdatei und Docker-Dateien nicht ausliefern
+<FilesMatch "(\.md$|^VERSION$|^Dockerfile$|^docker-compose\.ya?ml$|\.zip$)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Sicherheits-Header (nur wenn mod_headers verfügbar ist)
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

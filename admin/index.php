@@ -28,8 +28,11 @@ function is_hashed_password($pw) {
 
 if (isset($_POST['login']) && isset($_POST['password'])) {
     $loginOK = false;
+    $lockedFor = smzpulse_login_locked_for();
 
-    if ($stored_password && $_POST['login'] === $admin_user) {
+    if ($lockedFor > 0) {
+        // Gesperrt: Passwort gar nicht erst prüfen
+    } elseif ($stored_password && $_POST['login'] === $admin_user) {
         if (is_hashed_password($stored_password)) {
             $loginOK = password_verify($_POST['password'], $stored_password);
             // Hash already correct — if it came from the legacy slot, move it.
@@ -57,13 +60,17 @@ if (isset($_POST['login']) && isset($_POST['password'])) {
     }
 
     if ($loginOK) {
+        smzpulse_login_reset();
         session_regenerate_id(true);
         $_SESSION['loggedin'] = true;
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         $_SESSION['last_activity'] = time();
         header("Location: dashboard.php");
         exit;
+    } elseif ($lockedFor > 0) {
+        $error = "Zu viele Fehlversuche. Bitte in " . ceil($lockedFor / 60) . " Minute(n) erneut versuchen.";
     } else {
+        smzpulse_login_register_failure();
         $error = "Ungültiger Benutzername oder Passwort.";
     }
 }

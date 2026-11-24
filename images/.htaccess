@@ -29,3 +29,11 @@ Options -Indexes
 RemoveHandler .php .phar .phtml .php3 .php4 .php5 .php7 .php8
 RemoveType .php .phar .phtml .php3 .php4 .php5 .php7 .php8
 AddType text/plain .php .phar .phtml .php3 .php4 .php5 .php7 .php8
+
+# SVG-Dateien können JavaScript enthalten. Beim direkten Aufruf jegliche
+# Skriptausführung unterbinden (als <img> eingebunden ist das ohnehin aus).
+<IfModule mod_headers.c>
+    <FilesMatch "\.svg$">
+        Header always set Content-Security-Policy "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
+    </FilesMatch>
+</IfModule>

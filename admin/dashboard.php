@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/session_bootstrap.php';
+require_once __DIR__ . '/auth_helper.php';
 smzpulse_init_session();
 if (!smzpulse_check_timeout(true)) {
     header("Location: index.php?expired=1");
@@ -9,6 +10,7 @@ if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrfToken = $_SESSION['csrf_token'];
+$defaultPassword = smzpulse_auth_is_default_password();
 
 $config = is_file('../config.json') ? json_decode(file_get_contents('../config.json'), true) : [];
 if (!is_array($config)) $config = [];
@@ -40,6 +42,13 @@ if (!is_array($config)) $config = [];
                 <a href="index.php?logout=1" class="logout-link"><i class="fas fa-sign-out-alt"></i> Abmelden</a>
             </div>
         </header>
+
+        <?php if ($defaultPassword): ?>
+        <div class="update-alert update-alert-error" id="default-password-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Das Standard-Passwort ist noch aktiv.</strong> Es ist öffentlich bekannt – bitte sofort unter <strong>Einstellungen</strong> ein eigenes Passwort setzen. Bis dahin sind Online-Updates gesperrt.
+        </div>
+        <?php endif; ?>
 
         <div class="tabs">
             <button class="tab-btn active" onclick="showTab('images')">Bilder Gallerie</button>
@@ -175,6 +184,9 @@ if (!is_array($config)) $config = [];
                 <div id="update-git-hint" class="update-alert update-alert-info" style="display: none;">
                     <div>Im smzPulse-Ordner liegt ein Git-Ordner (<code>.git</code>). Wurde smzPulse per <code>git clone</code> installiert (z.&nbsp;B. für Docker), aktualisierst du es besser mit <code>git pull</code>, damit Git und die Dateien nicht auseinanderlaufen.</div>
                     <div style="margin-top: 6px;">Wurde smzPulse per FTP/SFTP hochgeladen, kannst du diesen Hinweis ignorieren und den Knopf unten nutzen. Den Ordner <code>.git</code> kannst du dann auch löschen.</div>
+                </div>
+                <div id="update-default-pw" class="update-alert update-alert-error" style="display: none;">
+                    Updates sind gesperrt, solange das Standard-Passwort aktiv ist. Bitte zuerst unter <strong>Einstellungen</strong> ein eigenes Passwort setzen und die Seite neu laden.
                 </div>
                 <div id="update-zip-missing" class="update-alert update-alert-error" style="display: none;">
                     Die PHP-Erweiterung „zip“ fehlt auf dem Server – Online-Updates sind nicht möglich. Bitte die Dateien per FTP einspielen.
@@ -574,6 +586,10 @@ if (!is_array($config)) $config = [];
                 alert('Passwörter stimmen nicht überein!');
                 return;
             }
+            if (password && password.length < 8) {
+                alert('Das Passwort muss mindestens 8 Zeichen lang sein.');
+                return;
+            }
 
             const formData = new FormData();
             formData.append('admin_password', password);
@@ -589,6 +605,11 @@ if (!is_array($config)) $config = [];
                 document.getElementById('settings-password').value = '';
                 document.getElementById('settings-password-confirm').value = '';
                 document.getElementById('settings-logo').value = '';
+                if (password) {
+                    const warn = document.getElementById('default-password-warning');
+                    if (warn) warn.remove();
+                    loadUpdateInfo();
+                }
 
                 // Refresh data and update header logo if changed
                 await loadData();
@@ -616,13 +637,14 @@ if (!is_array($config)) $config = [];
             const r = await fetch('api.php?action=update_info');
             if (r.status === 401) { handleSessionExpired(); return; }
             const info = await r.json();
-            updateZipOk = !!info.zip_ok;
+            updateZipOk = !!info.zip_ok && !info.default_password;
+            document.getElementById('update-default-pw').style.display = info.default_password ? 'block' : 'none';
             document.getElementById('update-installed').textContent = 'v' + info.version;
             document.getElementById('update-repo').textContent = info.repo;
             document.getElementById('update-max-upload').textContent = info.max_upload;
             document.getElementById('update-git-hint').style.display = info.git_checkout ? 'block' : 'none';
             document.getElementById('update-zip-missing').style.display = info.zip_ok ? 'none' : 'block';
-            document.getElementById('update-upload-btn').disabled = !info.zip_ok;
+            document.getElementById('update-upload-btn').disabled = !updateZipOk;
 
             const list = document.getElementById('update-backup-list');
             list.innerHTML = (info.backups || []).map(b =>

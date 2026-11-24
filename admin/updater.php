@@ -6,9 +6,14 @@
 //  - vorher wird ein Backup der ersetzten Programmdateien in storage/backups angelegt
 //  - Daten werden nie überschrieben: auth.php, config.json, theme.js, news/, images/ (Bilder + images.json)
 
+require_once __DIR__ . '/auth_helper.php';
+
 define('SMZPULSE_ROOT', dirname(__DIR__));
 define('SMZPULSE_UPDATE_REPO', 'hhochwald-fmb/smzpulse');
 define('SMZPULSE_UPDATE_MAX_ZIP', 40 * 1024 * 1024);
+// Grenzen für den entpackten Inhalt (Schutz gegen Zip-Bomben)
+define('SMZPULSE_UPDATE_MAX_UNPACKED', 60 * 1024 * 1024);
+define('SMZPULSE_UPDATE_MAX_FILE', 20 * 1024 * 1024);
 define('SMZPULSE_VERSION', trim((string) @file_get_contents(SMZPULSE_ROOT . '/VERSION')) ?: '1.1.0');
 
 function smzpulse_is_git_checkout() {
@@ -119,6 +124,9 @@ function smzpulse_check_latest() {
 }
 
 function smzpulse_download_latest() {
+    if (smzpulse_auth_is_default_password()) {
+        throw new RuntimeException('Updates sind gesperrt, solange das Standard-Passwort aktiv ist. Bitte zuerst unter Einstellungen ein eigenes Passwort setzen.');
+    }
     $info = smzpulse_check_latest();
     if (!$info['newer']) {
         throw new RuntimeException('Es ist bereits die neueste Version installiert.');
@@ -151,6 +159,9 @@ function smzpulse_update_allowed($rel) {
 
 /** Prüft und installiert ein Update-ZIP. Gibt die neue Version zurück. */
 function smzpulse_apply_update_zip($zipPath) {
+    if (smzpulse_auth_is_default_password()) {
+        throw new RuntimeException('Updates sind gesperrt, solange das Standard-Passwort aktiv ist. Bitte zuerst unter Einstellungen ein eigenes Passwort setzen.');
+    }
     if (!class_exists('ZipArchive')) {
         throw new RuntimeException('Die PHP-Erweiterung "zip" fehlt auf dem Server.');
     }
@@ -186,6 +197,7 @@ function smzpulse_apply_update_zip($zipPath) {
         }
 
         $entries = [];
+        $unpacked = 0;
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $n = (string) $zip->getNameIndex($i);
             if (strpos($n, $prefix) !== 0 || substr($n, -1) === '/') {
@@ -193,8 +205,17 @@ function smzpulse_apply_update_zip($zipPath) {
             }
             $rel = substr($n, strlen($prefix));
             if (smzpulse_update_allowed($rel)) {
+                $stat = $zip->statIndex($i);
+                $size = (int) ($stat['size'] ?? 0);
+                if ($size > SMZPULSE_UPDATE_MAX_FILE) {
+                    throw new RuntimeException("Die Datei $rel im Paket ist ungewöhnlich groß – Update abgebrochen, nichts wurde verändert.");
+                }
+                $unpacked += $size;
                 $entries[$i] = $rel;
             }
+        }
+        if ($unpacked > SMZPULSE_UPDATE_MAX_UNPACKED) {
+            throw new RuntimeException('Das Paket ist entpackt zu groß – Update abgebrochen, nichts wurde verändert.');
         }
 
         // Vollständigkeit prüfen, damit ein kaputtes Paket den Admin-Bereich nicht lahmlegt
@@ -236,7 +257,10 @@ function smzpulse_apply_update_zip($zipPath) {
             if (!is_dir(dirname($target))) {
                 mkdir(dirname($target), 0775, true);
             }
-            $data = $zip->getFromIndex($i);
+            $data = $zip->getFromIndex($i, SMZPULSE_UPDATE_MAX_FILE + 1);
+            if ($data !== false && strlen($data) > SMZPULSE_UPDATE_MAX_FILE) {
+                throw new RuntimeException("Die Datei $rel im Paket ist zu groß. Ein Backup liegt in storage/backups.");
+            }
             if ($data === false || file_put_contents($target, $data, LOCK_EX) === false) {
                 throw new RuntimeException("Fehler beim Schreiben von $rel. Ein Backup liegt in storage/backups.");
             }
