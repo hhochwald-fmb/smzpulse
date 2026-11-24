@@ -4,7 +4,7 @@
 //  - "Jetzt installieren" lädt es herunter (Release-Asset smzpulse-*.zip oder das Quellcode-ZIP des Tags)
 //  - alternativ kann ein ZIP von Hand hochgeladen werden
 //  - vorher wird ein Backup der ersetzten Programmdateien in storage/backups angelegt
-//  - Daten werden nie überschrieben: auth.php, config.json, theme.js, news/, images/ (Bilder + images.json)
+//  - Daten werden nie überschrieben: users.php, auth.php, config.json, theme.js, news/, images/ (Bilder + images.json)
 
 require_once __DIR__ . '/auth_helper.php';
 
@@ -224,7 +224,7 @@ function smzpulse_apply_update_zip($zipPath) {
             'admin/dashboard.php' => 'smzpulse_init_session',
             'admin/index.php' => 'smzpulse_init_session',
             'admin/session_bootstrap.php' => 'function smzpulse_init_session',
-            'admin/auth_helper.php' => 'function smzpulse_auth_load',
+            'admin/auth_helper.php' => 'function smzpulse_users_load',
             'admin/updater.php' => 'function smzpulse_apply_update_zip',
             'admin/style.css' => '.dashboard',
         ];

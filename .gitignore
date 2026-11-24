@@ -19,3 +19,7 @@ admin/.claude/
 # Update-Backups und temporäre Downloads
 storage/*
 !storage/.htaccess
+
+# Nutzer (Passwort-Hashes) – nie einchecken
+users.php
+users.lock

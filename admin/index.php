@@ -9,62 +9,17 @@ $configPath = '../config.json';
 $config = is_file($configPath) ? json_decode(file_get_contents($configPath), true) : [];
 if (!is_array($config)) $config = [];
 
-$admin_user = "admin";
-
-// Prefer the new auth.php. If it's empty (first run after upgrade), fall back
-// to the legacy admin_password field that used to live inside config.json.
-$stored_password = smzpulse_auth_get_password_hash();
-$legacy_source   = false;
-if ($stored_password === null && isset($config['admin_password'])) {
-    $stored_password = $config['admin_password'];
-    $legacy_source   = true;
-}
-
-function is_hashed_password($pw) {
-    return is_string($pw) && (strpos($pw, '$2y$') === 0
-        || strpos($pw, '$argon2') === 0
-        || strpos($pw, '$2a$') === 0);
-}
-
 if (isset($_POST['login']) && isset($_POST['password'])) {
-    $loginOK = false;
     $lockedFor = smzpulse_login_locked_for();
+    $user = null;
 
-    if ($lockedFor > 0) {
-        // Gesperrt: Passwort gar nicht erst prüfen
-    } elseif ($stored_password && $_POST['login'] === $admin_user) {
-        if (is_hashed_password($stored_password)) {
-            $loginOK = password_verify($_POST['password'], $stored_password);
-            // Hash already correct — if it came from the legacy slot, move it.
-            if ($loginOK && $legacy_source) {
-                smzpulse_auth_save_password($stored_password);
-                unset($config['admin_password']);
-                $tmp = $configPath . '.tmp.' . bin2hex(random_bytes(4));
-                file_put_contents($tmp, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-                rename($tmp, $configPath);
-            }
-        } else {
-            // Legacy plaintext — verify once, hash, save, scrub from config.json
-            if (hash_equals((string)$stored_password, (string)$_POST['password'])) {
-                $loginOK = true;
-                $newHash = password_hash($_POST['password'], PASSWORD_DEFAULT);
-                smzpulse_auth_save_password($newHash);
-                if ($legacy_source) {
-                    unset($config['admin_password']);
-                    $tmp = $configPath . '.tmp.' . bin2hex(random_bytes(4));
-                    file_put_contents($tmp, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-                    rename($tmp, $configPath);
-                }
-            }
-        }
+    if ($lockedFor === 0) {
+        $user = smzpulse_users_verify($_POST['login'], $_POST['password']);
     }
 
-    if ($loginOK) {
+    if ($user) {
         smzpulse_login_reset();
-        session_regenerate_id(true);
-        $_SESSION['loggedin'] = true;
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-        $_SESSION['last_activity'] = time();
+        smzpulse_session_login($user);
         header("Location: dashboard.php");
         exit;
     } elseif ($lockedFor > 0) {
@@ -115,11 +70,11 @@ if (isset($_GET['logout'])) {
             <form method="POST">
                 <div class="form-group">
                     <label for="login">Benutzername</label>
-                    <input type="text" id="login" name="login" required autofocus>
+                    <input type="text" id="login" name="login" required autofocus autocapitalize="none" autocomplete="username">
                 </div>
                 <div class="form-group">
                     <label for="password">Passwort</label>
-                    <input type="password" id="password" name="password" required>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
                 </div>
                 <button type="submit" class="btn-primary">Anmelden</button>
             </form>

@@ -10,7 +10,16 @@ if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrfToken = $_SESSION['csrf_token'];
-$defaultPassword = smzpulse_auth_is_default_password();
+
+$me = smzpulse_current_user();
+if ($me === null) {
+    header("Location: index.php?expired=1");
+    exit;
+}
+$isAdmin = smzpulse_is_admin($me);
+$allUsers = smzpulse_users_load();
+$ownDefaultPassword = smzpulse_hash_is_default($allUsers[$me['name']]['hash'] ?? '');
+$defaultPassword = $isAdmin && smzpulse_auth_is_default_password();
 
 $config = is_file('../config.json') ? json_decode(file_get_contents('../config.json'), true) : [];
 if (!is_array($config)) $config = [];
@@ -39,23 +48,33 @@ if (!is_array($config)) $config = [];
                 <h2>smzPulse <span>Backend</span></h2>
             </div>
             <div class="header-right">
+                <span class="current-user"><i class="fas fa-user-circle"></i> <?php echo htmlspecialchars($me['name']); ?> <span class="role-badge role-<?php echo htmlspecialchars($me['role']); ?>"><?php echo htmlspecialchars(SMZPULSE_ROLES[$me['role']] ?? $me['role']); ?></span></span>
                 <a href="index.php?logout=1" class="logout-link"><i class="fas fa-sign-out-alt"></i> Abmelden</a>
             </div>
         </header>
 
-        <?php if ($defaultPassword): ?>
+        <?php if ($ownDefaultPassword): ?>
         <div class="update-alert update-alert-error" id="default-password-warning">
             <i class="fas fa-exclamation-triangle"></i>
-            <strong>Das Standard-Passwort ist noch aktiv.</strong> Es ist öffentlich bekannt – bitte sofort unter <strong>Einstellungen</strong> ein eigenes Passwort setzen. Bis dahin sind Online-Updates gesperrt.
+            <strong>Du nutzt noch das Standard-Passwort.</strong> Es ist öffentlich bekannt – bitte sofort unter <strong>Mein Konto</strong> ein eigenes Passwort setzen.<?php if ($isAdmin): ?> Bis dahin sind Online-Updates gesperrt.<?php endif; ?>
+        </div>
+        <?php elseif ($defaultPassword): ?>
+        <div class="update-alert update-alert-error" id="default-password-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Ein Admin-Konto nutzt noch das Standard-Passwort.</strong> Bitte unter <strong>Nutzer</strong> ein neues Passwort setzen. Bis dahin sind Online-Updates gesperrt.
         </div>
         <?php endif; ?>
 
         <div class="tabs">
             <button class="tab-btn active" onclick="showTab('images')">Bilder Gallerie</button>
             <button class="tab-btn" onclick="showTab('news')">News Ticker</button>
+            <?php if ($isAdmin): ?>
             <button class="tab-btn" onclick="showTab('devices')">Apple TV Geräte</button>
             <button class="tab-btn" onclick="showTab('settings')">Einstellungen</button>
+            <button class="tab-btn" onclick="showTab('users')">Nutzer</button>
             <button class="tab-btn" onclick="showTab('updates')">Updates</button>
+            <?php endif; ?>
+            <button class="tab-btn" onclick="showTab('account')">Mein Konto</button>
         </div>
 
         <!-- Images Tab -->
@@ -100,6 +119,7 @@ if (!is_array($config)) $config = [];
             </div>
         </div>
 
+        <?php if ($isAdmin): ?>
         <!-- Devices Tab -->
         <div id="devices-tab" class="tab-content">
             <div class="card">
@@ -131,20 +151,9 @@ if (!is_array($config)) $config = [];
         <div id="settings-tab" class="tab-content">
             <div class="card">
                 <h3>System-Einstellungen</h3>
-                <p class="text-muted" style="margin-bottom: 20px;">Hier können Sie das Admin-Passwort und die Farben der App anpassen.</p>
+                <p class="text-muted" style="margin-bottom: 20px;">Hier können Sie das Logo und die Farben der App anpassen. Passwörter: siehe „Mein Konto“ bzw. „Nutzer“.</p>
                 
                 <div class="settings-form">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                        <div class="form-group">
-                            <label>Admin Passwort</label>
-                            <input type="password" id="settings-password" placeholder="Neues Passwort">
-                        </div>
-                        <div class="form-group">
-                            <label>Passwort wiederholen</label>
-                            <input type="password" id="settings-password-confirm" placeholder="Passwort bestätigen">
-                        </div>
-                    </div>
-                    
                     <div class="form-group">
                         <label>Logo hochladen (ersetzt aktuelles Logo)</label>
                         <input type="file" id="settings-logo" accept="image/*">
@@ -221,6 +230,69 @@ if (!is_array($config)) $config = [];
                 </div>
             </div>
         </div>
+
+        <!-- Users Tab -->
+        <div id="users-tab" class="tab-content">
+            <div class="card">
+                <h3>Nutzer</h3>
+                <p class="text-muted" style="margin-bottom: 20px;"><strong>Admins</strong> dürfen alles. <strong>Redakteure</strong> dürfen nur Bilder und Ticker-Texte bearbeiten.</p>
+
+                <div id="user-list" class="user-list"></div>
+
+                <hr class="update-divider">
+
+                <h4>Neuen Nutzer anlegen</h4>
+                <div class="user-create">
+                    <div class="form-group">
+                        <label>Benutzername</label>
+                        <input type="text" id="new-user-name" placeholder="z. B. mueller" autocapitalize="none" autocomplete="off" maxlength="32">
+                    </div>
+                    <div class="form-group">
+                        <label>Rolle</label>
+                        <select id="new-user-role">
+                            <option value="editor">Redakteur</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Passwort (mind. 8 Zeichen)</label>
+                        <input type="password" id="new-user-password" autocomplete="new-password">
+                    </div>
+                </div>
+                <p class="text-muted" style="font-size: 12px;">Benutzername: Kleinbuchstaben, Zahlen, Punkt, Minus, Unterstrich. Das Passwort gibst du der Person persönlich – sie kann es danach unter „Mein Konto“ ändern.</p>
+                <div class="action-bar">
+                    <button class="btn-save" onclick="createUser()">Nutzer anlegen</button>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Account Tab -->
+        <div id="account-tab" class="tab-content">
+            <div class="card">
+                <h3>Mein Konto</h3>
+                <p class="text-muted" style="margin-bottom: 20px;">Angemeldet als <strong><?php echo htmlspecialchars($me['name']); ?></strong> (<?php echo htmlspecialchars(SMZPULSE_ROLES[$me['role']] ?? $me['role']); ?>). Nach einer Passwortänderung werden deine anderen Sitzungen (z. B. auf anderen Geräten) abgemeldet.</p>
+                <div class="settings-form">
+                    <div class="form-group">
+                        <label>Aktuelles Passwort</label>
+                        <input type="password" id="account-current" autocomplete="current-password">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div class="form-group">
+                            <label>Neues Passwort (mind. 8 Zeichen)</label>
+                            <input type="password" id="account-new" autocomplete="new-password">
+                        </div>
+                        <div class="form-group">
+                            <label>Neues Passwort wiederholen</label>
+                            <input type="password" id="account-confirm" autocomplete="new-password">
+                        </div>
+                    </div>
+                </div>
+                <div class="action-bar">
+                    <button class="btn-save" onclick="changeOwnPassword()">Passwort ändern</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -231,6 +303,7 @@ if (!is_array($config)) $config = [];
         };
 
         const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        const IS_ADMIN = <?php echo $isAdmin ? 'true' : 'false'; ?>;
 
         let sessionExpiredHandled = false;
         function handleSessionExpired() {
@@ -314,8 +387,10 @@ if (!is_array($config)) $config = [];
         function renderAll() {
             renderNews();
             renderImages();
-            renderDevices();
-            renderSettings();
+            if (IS_ADMIN) {
+                renderDevices();
+                renderSettings();
+            }
         }
 
         // Tab Management
@@ -576,23 +651,11 @@ if (!is_array($config)) $config = [];
         }
 
         async function saveSettings() {
-            const password = document.getElementById('settings-password').value;
-            const confirm = document.getElementById('settings-password-confirm').value;
             const primary = document.getElementById('settings-primary-text').value;
             const secondary = document.getElementById('settings-secondary-text').value;
             const logoFile = document.getElementById('settings-logo').files[0];
 
-            if (password !== confirm) {
-                alert('Passwörter stimmen nicht überein!');
-                return;
-            }
-            if (password && password.length < 8) {
-                alert('Das Passwort muss mindestens 8 Zeichen lang sein.');
-                return;
-            }
-
             const formData = new FormData();
-            formData.append('admin_password', password);
             formData.append('primary_color', primary);
             formData.append('secondary_color', secondary);
             if (logoFile) {
@@ -602,14 +665,7 @@ if (!is_array($config)) $config = [];
             const res = await apiPost('save_settings', formData, true);
             if (res.success) {
                 alert('Einstellungen gespeichert!');
-                document.getElementById('settings-password').value = '';
-                document.getElementById('settings-password-confirm').value = '';
                 document.getElementById('settings-logo').value = '';
-                if (password) {
-                    const warn = document.getElementById('default-password-warning');
-                    if (warn) warn.remove();
-                    loadUpdateInfo();
-                }
 
                 // Refresh data and update header logo if changed
                 await loadData();
@@ -727,9 +783,125 @@ if (!is_array($config)) $config = [];
             runUpdate(document.getElementById('update-upload-btn'), 'update_upload', formData, true);
         }
 
+        // --- Mein Konto ---
+        async function changeOwnPassword() {
+            const current = document.getElementById('account-current').value;
+            const pw = document.getElementById('account-new').value;
+            const confirmPw = document.getElementById('account-confirm').value;
+            if (!current) { alert('Bitte das aktuelle Passwort eingeben.'); return; }
+            if (pw !== confirmPw) { alert('Die neuen Passwörter stimmen nicht überein!'); return; }
+            if (pw.length < 8) { alert('Das Passwort muss mindestens 8 Zeichen lang sein.'); return; }
+            const res = await apiPost('change_password', { current_password: current, new_password: pw });
+            if (res.success) {
+                ['account-current', 'account-new', 'account-confirm'].forEach(id => document.getElementById(id).value = '');
+                alert('Passwort geändert.');
+                window.location.reload();
+            } else {
+                alert('Fehler: ' + (res.error || 'Unbekannt'));
+            }
+        }
+
+        // --- Nutzerverwaltung (nur Admins) ---
+        const ROLE_LABELS = { admin: 'Admin', editor: 'Redakteur' };
+
+        async function loadUsers() {
+            const r = await fetch('api.php?action=users_list');
+            if (r.status === 401) { handleSessionExpired(); return; }
+            const data = await r.json();
+            const list = document.getElementById('user-list');
+            list.innerHTML = '';
+            (data.users || []).forEach(u => {
+                const isMe = u.name === data.me;
+                const row = document.createElement('div');
+                row.className = 'user-row';
+                row.innerHTML = `
+                    <div class="user-name">
+                        <i class="fas fa-user"></i> <strong></strong>
+                        ${isMe ? '<span class="text-muted">(du)</span>' : ''}
+                        ${u.default_password ? '<span class="role-badge role-warn">Standard-Passwort!</span>' : ''}
+                    </div>
+                    <select class="user-role" ${isMe ? 'disabled title="Die eigene Rolle kann ein anderer Admin ändern."' : ''}>
+                        <option value="editor">Redakteur</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <button class="btn-icon" title="Passwort neu setzen" ${isMe ? 'disabled' : ''}><i class="fas fa-key"></i></button>
+                    <button class="btn-icon delete" title="Nutzer löschen" ${isMe ? 'disabled' : ''}><i class="fas fa-trash-alt"></i></button>
+                    <div class="user-pw-reset" style="display: none;">
+                        <input type="password" placeholder="Neues Passwort (mind. 8 Zeichen)" autocomplete="new-password">
+                        <button class="btn-primary btn-inline">Setzen</button>
+                    </div>
+                `;
+                row.querySelector('strong').textContent = u.name;   // textContent: kein HTML aus Namen
+                const sel = row.querySelector('select');
+                sel.value = u.role;
+                sel.addEventListener('change', () => updateUserRole(u.name, sel));
+                const [keyBtn, delBtn, setBtn] = row.querySelectorAll('button');
+                const pwBox = row.querySelector('.user-pw-reset');
+                keyBtn.addEventListener('click', () => {
+                    pwBox.style.display = pwBox.style.display === 'none' ? 'flex' : 'none';
+                    pwBox.querySelector('input').focus();
+                });
+                setBtn.addEventListener('click', () => resetUserPassword(u.name, pwBox.querySelector('input')));
+                delBtn.addEventListener('click', () => deleteUser(u.name));
+                list.appendChild(row);
+            });
+        }
+
+        async function createUser() {
+            const name = document.getElementById('new-user-name').value.trim().toLowerCase();
+            const role = document.getElementById('new-user-role').value;
+            const password = document.getElementById('new-user-password').value;
+            if (!/^[a-z0-9._-]{2,32}$/.test(name)) {
+                alert('Benutzername: 2–32 Zeichen, nur Kleinbuchstaben, Zahlen, Punkt, Minus, Unterstrich.');
+                return;
+            }
+            if (password.length < 8) { alert('Das Passwort muss mindestens 8 Zeichen lang sein.'); return; }
+            const res = await apiPost('user_create', { name, role, password });
+            if (res.success) {
+                document.getElementById('new-user-name').value = '';
+                document.getElementById('new-user-password').value = '';
+                document.getElementById('new-user-role').value = 'editor';
+                loadUsers();
+            } else {
+                alert('Fehler: ' + (res.error || 'Unbekannt'));
+            }
+        }
+
+        async function updateUserRole(name, sel) {
+            const role = sel.value;
+            if (!confirm(`Rolle von „${name}“ auf „${ROLE_LABELS[role]}“ ändern?`)) { loadUsers(); return; }
+            const res = await apiPost('user_update', { name, role });
+            if (!res.success) alert('Fehler: ' + (res.error || 'Unbekannt'));
+            loadUsers();
+        }
+
+        async function resetUserPassword(name, input) {
+            const pw = input.value;
+            if (pw.length < 8) { alert('Das Passwort muss mindestens 8 Zeichen lang sein.'); return; }
+            if (!confirm(`Passwort für „${name}“ neu setzen? Die Person wird dabei überall abgemeldet.`)) return;
+            const res = await apiPost('user_update', { name, password: pw });
+            if (res.success) {
+                alert('Passwort für „' + name + '“ gesetzt.');
+                if (IS_ADMIN) loadUpdateInfo();
+                loadUsers();
+            } else {
+                alert('Fehler: ' + (res.error || 'Unbekannt'));
+            }
+        }
+
+        async function deleteUser(name) {
+            if (!confirm(`Nutzer „${name}“ wirklich löschen? Er wird sofort abgemeldet.`)) return;
+            const res = await apiPost('user_delete', { name });
+            if (!res.success) alert('Fehler: ' + (res.error || 'Unbekannt'));
+            loadUsers();
+        }
+
         // Start
         loadData();
-        loadUpdateInfo();
+        if (IS_ADMIN) {
+            loadUpdateInfo();
+            loadUsers();
+        }
     </script>
 </body>
 </html>

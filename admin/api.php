@@ -19,6 +19,24 @@ if (!smzpulse_check_timeout($touchActivity)) {
     exit;
 }
 
+// Nutzer frisch aus users.php – gelöschte Nutzer / geänderte Passwörter fliegen sofort raus
+$currentUser = smzpulse_current_user();
+if ($currentUser === null) {
+    http_response_code(401);
+    echo json_encode(['error' => 'Session expired']);
+    exit;
+}
+
+// ---- Rechte: diese Aktionen dürfen nur Admins ----
+$adminOnly = ['save_devices', 'save_settings',
+              'update_info', 'update_check', 'update_install', 'update_upload',
+              'users_list', 'user_create', 'user_update', 'user_delete'];
+if (in_array($action, $adminOnly, true) && !smzpulse_is_admin($currentUser)) {
+    http_response_code(403);
+    echo json_encode(['error' => 'Dafür fehlen die Rechte (nur Admins).']);
+    exit;
+}
+
 $configPath     = '../config.json';
 $imagesJsonPath = '../images/images.json';
 $newsPath       = '../news/news.json';
@@ -26,7 +44,8 @@ $imagesDir      = '../images/';
 
 // ---- CSRF check for state-changing actions ----
 $stateChanging = ['save_news', 'save_devices', 'upload_image', 'delete_image', 'reorder_images', 'save_settings', 'update_image_duration',
-                  'update_check', 'update_install', 'update_upload'];
+                  'update_check', 'update_install', 'update_upload',
+                  'change_password', 'user_create', 'user_update', 'user_delete'];
 if (in_array($action, $stateChanging, true)) {
     $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? '';
     if (empty($_SESSION['csrf_token']) || !is_string($token) || !hash_equals($_SESSION['csrf_token'], $token)) {
@@ -119,6 +138,7 @@ switch ($action) {
             'config' => read_json($configPath),
             'images' => normalize_images_list(read_json($imagesJsonPath)),
             'news'   => read_json($newsPath),
+            'me'     => ['name' => $currentUser['name'], 'role' => $currentUser['role']],
         ]);
         break;
 
@@ -293,21 +313,6 @@ switch ($action) {
         // publicly readable for the Apple TV app.
         unset($config['admin_password']);
 
-        if (!empty($_POST['admin_password'])) {
-            $newPw = (string)$_POST['admin_password'];
-            if (strlen($newPw) < 8 || in_array(strtolower($newPw), ['smzpulse', 'admin', 'password', 'passwort'], true)) {
-                http_response_code(400);
-                echo json_encode(['error' => 'Passwort zu schwach: mindestens 8 Zeichen und nicht das Standard-Passwort']);
-                break;
-            }
-            $newHash = password_hash((string)$_POST['admin_password'], PASSWORD_DEFAULT);
-            if (!smzpulse_auth_save_password($newHash)) {
-                http_response_code(500);
-                echo json_encode(['error' => 'Passwort konnte nicht gespeichert werden']);
-                break;
-            }
-        }
-
         if (isset($_FILES['logo']) && ($_FILES['logo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
             [$ext, $err] = validate_uploaded_image($_FILES['logo'], 5 * 1024 * 1024);
             if ($err) {
@@ -395,6 +400,157 @@ switch ($action) {
         if (!write_json_atomic($imagesJsonPath, array_values($images))) {
             http_response_code(500);
             echo json_encode(['error' => 'JSON konnte nicht aktualisiert werden']);
+            break;
+        }
+        echo json_encode(['success' => true]);
+        break;
+    }
+
+    // ---- Eigenes Passwort ändern (alle Rollen) ----
+    case 'change_password': {
+        $data = json_decode(file_get_contents('php://input'), true);
+        $current = (string)($data['current_password'] ?? '');
+        $new     = (string)($data['new_password'] ?? '');
+        if (!smzpulse_users_verify($currentUser['name'], $current)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Das aktuelle Passwort ist falsch.']);
+            break;
+        }
+        if ($problem = smzpulse_password_problem($new)) {
+            http_response_code(400);
+            echo json_encode(['error' => $problem]);
+            break;
+        }
+        $name = $currentUser['name'];
+        $newPwv = null;
+        $res = smzpulse_users_update(function (&$users) use ($name, $new, &$newPwv) {
+            if (!isset($users[$name])) return 'Nutzer nicht gefunden.';
+            $users[$name]['hash'] = password_hash($new, PASSWORD_DEFAULT);
+            $users[$name]['pwv']  = $newPwv = (int)($users[$name]['pwv'] ?? 1) + 1;
+        });
+        if ($res !== true) {
+            http_response_code(500);
+            echo json_encode(['error' => is_string($res) ? $res : 'Passwort konnte nicht gespeichert werden (Schreibrechte?)']);
+            break;
+        }
+        // Diese Sitzung bleibt gültig, alle anderen Sitzungen des Nutzers nicht
+        $_SESSION['pwv'] = $newPwv;
+        session_regenerate_id(true);
+        echo json_encode(['success' => true]);
+        break;
+    }
+
+    // ---- Nutzerverwaltung (nur Admins, siehe $adminOnly) ----
+    case 'users_list': {
+        $list = [];
+        foreach (smzpulse_users_load() as $name => $u) {
+            $list[] = [
+                'name'    => $name,
+                'role'    => $u['role'] ?? 'editor',
+                'created' => $u['created'] ?? null,
+                'default_password' => smzpulse_hash_is_default($u['hash'] ?? ''),
+            ];
+        }
+        echo json_encode(['users' => $list, 'me' => $currentUser['name']]);
+        break;
+    }
+
+    case 'user_create': {
+        $data = json_decode(file_get_contents('php://input'), true);
+        $name = strtolower(trim((string)($data['name'] ?? '')));
+        $role = (string)($data['role'] ?? '');
+        $pw   = (string)($data['password'] ?? '');
+        if (!smzpulse_valid_username($name)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Benutzername: 2–32 Zeichen, nur Kleinbuchstaben, Zahlen, Punkt, Minus, Unterstrich.']);
+            break;
+        }
+        if (!isset(SMZPULSE_ROLES[$role])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Ungültige Rolle.']);
+            break;
+        }
+        if ($problem = smzpulse_password_problem($pw)) {
+            http_response_code(400);
+            echo json_encode(['error' => $problem]);
+            break;
+        }
+        $hash = password_hash($pw, PASSWORD_DEFAULT);
+        $res = smzpulse_users_update(function (&$users) use ($name, $role, $hash) {
+            if (isset($users[$name])) return 'Diesen Benutzernamen gibt es schon.';
+            $users[$name] = ['hash' => $hash, 'role' => $role, 'pwv' => 1, 'created' => date('c')];
+        });
+        if ($res !== true) {
+            http_response_code(is_string($res) ? 400 : 500);
+            echo json_encode(['error' => is_string($res) ? $res : 'Nutzer konnte nicht gespeichert werden (Schreibrechte?)']);
+            break;
+        }
+        echo json_encode(['success' => true]);
+        break;
+    }
+
+    case 'user_update': {
+        // Rolle ändern und/oder Passwort neu setzen
+        $data = json_decode(file_get_contents('php://input'), true);
+        $name = strtolower(trim((string)($data['name'] ?? '')));
+        $role = isset($data['role']) ? (string)$data['role'] : null;
+        $pw   = isset($data['password']) && $data['password'] !== '' ? (string)$data['password'] : null;
+        if ($role !== null && !isset(SMZPULSE_ROLES[$role])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Ungültige Rolle.']);
+            break;
+        }
+        if ($pw !== null && ($problem = smzpulse_password_problem($pw))) {
+            http_response_code(400);
+            echo json_encode(['error' => $problem]);
+            break;
+        }
+        if ($pw !== null && $name === $currentUser['name']) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Dein eigenes Passwort änderst du unter „Mein Konto“.']);
+            break;
+        }
+        $hash = $pw !== null ? password_hash($pw, PASSWORD_DEFAULT) : null;
+        $res = smzpulse_users_update(function (&$users) use ($name, $role, $hash) {
+            if (!isset($users[$name])) return 'Nutzer nicht gefunden.';
+            if ($role !== null && $role !== 'admin' && ($users[$name]['role'] ?? '') === 'admin'
+                && smzpulse_admin_count($users) <= 1) {
+                return 'Der letzte Admin kann nicht herabgestuft werden.';
+            }
+            if ($role !== null) $users[$name]['role'] = $role;
+            if ($hash !== null) {
+                $users[$name]['hash'] = $hash;
+                // Alle bestehenden Sitzungen dieses Nutzers beenden
+                $users[$name]['pwv'] = (int)($users[$name]['pwv'] ?? 1) + 1;
+            }
+        });
+        if ($res !== true) {
+            http_response_code(is_string($res) ? 400 : 500);
+            echo json_encode(['error' => is_string($res) ? $res : 'Nutzer konnte nicht gespeichert werden (Schreibrechte?)']);
+            break;
+        }
+        echo json_encode(['success' => true]);
+        break;
+    }
+
+    case 'user_delete': {
+        $data = json_decode(file_get_contents('php://input'), true);
+        $name = strtolower(trim((string)($data['name'] ?? '')));
+        if ($name === $currentUser['name']) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Du kannst dich nicht selbst löschen.']);
+            break;
+        }
+        $res = smzpulse_users_update(function (&$users) use ($name) {
+            if (!isset($users[$name])) return 'Nutzer nicht gefunden.';
+            if (($users[$name]['role'] ?? '') === 'admin' && smzpulse_admin_count($users) <= 1) {
+                return 'Der letzte Admin kann nicht gelöscht werden.';
+            }
+            unset($users[$name]);
+        });
+        if ($res !== true) {
+            http_response_code(is_string($res) ? 400 : 500);
+            echo json_encode(['error' => is_string($res) ? $res : 'Nutzer konnte nicht gelöscht werden (Schreibrechte?)']);
             break;
         }
         echo json_encode(['success' => true]);

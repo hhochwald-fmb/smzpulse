@@ -1,5 +1,5 @@
 # smzPulse — Apple-TV Digital-Signage-System
-**Version 1.2.1**
+**Version 1.3.0**
 
 Web-Backend zur Verwaltung von Bildern, News-Texten und Geräten für eine Apple-TV-App, die im SMZ Stuttgart als digitales Display-System läuft.
 
@@ -15,6 +15,7 @@ Die Apple-TV-App ruft sich Inhalte und Konfiguration als statische Dateien direk
   - [Variante B — Lokaler Server im Schulnetz (MAMP / XAMPP)](#variante-b--lokaler-server-im-schulnetz)
   - [Variante C — Docker](#variante-c--docker)
 - [Erstes Login](#erstes-login)
+- [Nutzer und Rollen](#nutzer-und-rollen)
 - [Verzeichnisstruktur](#verzeichnisstruktur)
 - [Was die Apple-TV-App braucht](#was-die-apple-tv-app-braucht)
 - [Apple-TV-App konfigurieren](#apple-tv-app-konfigurieren)
@@ -192,17 +193,41 @@ Initial-Zugang (Standard aus dem Repository):
 - **Benutzer:** `admin`
 - **Passwort:** `smzpulse`
 
-> ⚠️ **Direkt nach dem ersten Login das Passwort ändern**: Einstellungen → Admin Passwort.  
+> ⚠️ **Direkt nach dem ersten Login das Passwort ändern**: Mein Konto → Passwort ändern.  
 > Das Standard-Passwort ist öffentlich bekannt — bei produktivem Einsatz unbedingt sofort ersetzen.  
 > Nach 5 falschen Passwörtern wird die IP-Adresse für 15 Minuten gesperrt.
 >
-> Das Backend hasht das neue Passwort automatisch mit bcrypt und speichert es in `auth.php`. Der Klartext landet nirgendwo.
+> Das Backend hasht Passwörter automatisch mit bcrypt und speichert sie in `users.php`. Der Klartext landet nirgendwo.
 
-Nach dem Login findest du im Dashboard vier Tabs:
-- **Bilder Gallerie** — Upload, Löschen, Sortieren per Drag&Drop
+Nach dem Login findest du im Dashboard diese Tabs:
+- **Bilder Gallerie** — Upload, Löschen, Sortieren per Drag&Drop, Anzeigedauer pro Bild
 - **News Ticker** — Texte für den unteren Bildschirmrand
-- **Apple TV Geräte** — UUIDs der registrierten TVs (siehe deine Apple-TV-App-Dokumentation, wie du an die UUID kommst)
-- **Einstellungen** — Passwort, Logo, Primär-/Sekundärfarbe
+- **Apple TV Geräte** *(nur Admins)* — UUIDs der registrierten TVs (siehe deine Apple-TV-App-Dokumentation, wie du an die UUID kommst)
+- **Einstellungen** *(nur Admins)* — Logo, Primär-/Sekundärfarbe
+- **Nutzer** *(nur Admins)* — Nutzer anlegen, Rollen ändern, Passwörter neu setzen, löschen
+- **Updates** *(nur Admins)* — Online-Update
+- **Mein Konto** — eigenes Passwort ändern
+
+---
+
+## Nutzer und Rollen
+
+Es gibt zwei Rollen:
+
+| | Admin | Redakteur |
+|---|---|---|
+| Bilder hochladen, löschen, sortieren, Anzeigedauer | ✅ | ✅ |
+| Ticker-Texte ändern | ✅ | ✅ |
+| Eigenes Passwort ändern | ✅ | ✅ |
+| Apple-TV-Geräte, Farben, Logo | ✅ | ❌ |
+| Nutzer verwalten | ✅ | ❌ |
+| Updates | ✅ | ❌ |
+
+- Die Nutzer liegen in `users.php` (keine Datenbank nötig). Die Datei wird beim ersten Login nach dem Update auf 1.3.0 automatisch angelegt: Der bisherige Zugang wird zum Admin `admin` mit dem bisherigen Passwort.
+- Die Rechte werden bei **jeder** Aktion auf dem Server geprüft, nicht nur durch Ausblenden der Reiter.
+- Rollenänderungen wirken sofort. Wird ein Nutzer gelöscht oder sein Passwort neu gesetzt, ist er sofort überall abgemeldet.
+- Der letzte Admin kann weder gelöscht noch herabgestuft werden.
+- Benutzernamen: 2–32 Zeichen, Kleinbuchstaben, Zahlen, `.`, `-`, `_`. Passwörter: mind. 8 Zeichen.
 
 ---
 
@@ -212,7 +237,8 @@ Nach dem Login findest du im Dashboard vier Tabs:
 smzpulse/
 ├── .htaccess              # Schützt auth.php / .bak / .tmp, blockt Directory-Listing
 ├── config.json            # Devices, Farben, Logo-Dateiname (öffentlich lesbar — App braucht das)
-├── auth.php               # Passwort-Hash (geschützt, nur Server-seitig)
+├── users.php              # Nutzer + Passwort-Hashes (wird automatisch angelegt, geschützt)
+├── auth.php               # Altes Einzel-Passwort, nur noch für die Übernahme nach users.php
 ├── VERSION                # Installierte Programmversion (wird vom Online-Update ersetzt)
 ├── storage/               # Update-Backups + temporäre Downloads (per .htaccess gesperrt)
 ├── theme.js               # Wird beim Speichern in Einstellungen automatisch generiert
@@ -331,7 +357,7 @@ Regelmäßig sichern (z.B. wöchentlich):
 
 | Pfad | Inhalt |
 |---|---|
-| `auth.php` | Admin-Passwort-Hash |
+| `users.php` | Nutzer, Rollen, Passwort-Hashes |
 | `config.json` | Devices, Farben, Logo-Dateiname |
 | `news/news.json` | Ticker-Texte |
 | `images/images.json` | Bildreihenfolge |
@@ -350,7 +376,7 @@ Im Admin-Bereich: **Updates → „Nach Updates suchen“**. smzPulse fragt das 
 Was beim Update passiert:
 - Vorher wird ein Backup der ersetzten Programmdateien in `storage/backups/` angelegt
 - Ersetzt werden nur Programmdateien (`admin/`, `index.php`, `VERSION`, `README.md`, `.htaccess`, Docker-Dateien)
-- **Nie** überschrieben werden: `auth.php`, `config.json`, `theme.js`, `news/`, `images/` (Bilder und `images.json`)
+- **Nie** überschrieben werden: `users.php`, `auth.php`, `config.json`, `theme.js`, `news/`, `images/` (Bilder und `images.json`)
 
 Ohne Internetzugang des Servers kann man das Release-ZIP von GitHub („Source code (zip)“) auch unter **Updates → Update-Paket hochladen** einspielen.
 
@@ -425,7 +451,9 @@ Alle Drittanbieter-Ressourcen sind lokal eingebunden (`admin/vendor/`) — **kei
 
 ## Sicherheits-Architektur (Kurzfassung)
 
-- Login: Passwort wird mit `password_hash()` (bcrypt) gespeichert in `auth.php`
+- Login: Nutzer mit Rollen (Admin/Redakteur) in `users.php`, Passwörter mit `password_hash()` (bcrypt)
+- Rechte: jede API-Aktion prüft die Rolle serverseitig; Rolle und Passwort-Version werden bei jedem Aufruf frisch gelesen
+- Brute-Force-Schutz: nach 5 Fehlversuchen 15 Minuten Sperre pro IP
 - Sessions: HttpOnly + SameSite=Lax Cookies, `session_regenerate_id` beim Login
 - CSRF: Jede mutierende API-Aktion erwartet `X-CSRF-Token` Header (im Dashboard automatisch beigefügt)
 - Upload-Validierung: MIME-Check via `finfo`, Endung-Whitelist, Größenlimit, System-generierte Dateinamen

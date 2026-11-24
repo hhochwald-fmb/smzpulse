@@ -8,3 +8,5 @@ docker-compose.yml
 .dockerignore
 storage/backups
 storage/tmp
+users.php
+users.lock
